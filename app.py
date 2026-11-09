@@ -11,7 +11,7 @@ from core.angle_calculator import hitung_semua_sudut
 from core.pose_detector import PoseDetector, pilih_sisi
 from core.rula_evaluator import DEFAULT_THRESHOLDS, KATEGORI, WARNA_HEX, evaluasi
 from utils.image_processor import gambar_anotasi, tingkatkan_kontras
-from utils.report_generator import baris_hasil, grafik_distribusi, ke_csv
+from utils.report_generator import baris_hasil, ke_csv
 
 st.set_page_config(page_title="ErgoPose RULA Analyzer", page_icon=":material/accessibility_new:", layout="wide")
 
@@ -58,6 +58,21 @@ st.html("""
 .ep-joint .name{font-size:.9rem;color:var(--ep-muted)}
 .ep-joint .val{font-size:2rem;font-weight:700;margin:2px 0 8px;font-variant-numeric:tabular-nums;color:#0F2A33}
 .ep-joint .hint{font-size:.8rem;color:var(--ep-muted);margin-top:10px}
+.ep-dist .lead{margin:0 0 14px;line-height:1.5;color:#0F2A33}
+.ep-stack{display:flex;gap:3px;height:16px}
+.ep-stack span{border-radius:5px;min-width:6px}
+.ep-dist-row{display:grid;grid-template-columns:170px 1fr 36px 44px;align-items:center;gap:14px;margin:12px 0}
+.ep-dist-row .ep-chip{justify-self:start}
+.ep-track{height:8px;border-radius:4px;background:#E8F4F7;overflow:hidden}
+.ep-track span{display:block;height:100%;border-radius:4px}
+.ep-num{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:#0F2A33}
+.ep-pct{text-align:right;color:var(--ep-muted);font-variant-numeric:tabular-nums}
+.ep-sub{font-size:.78rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ep-muted);margin:22px 0 8px}
+.ep-tl{display:flex;gap:2px;height:30px}
+.ep-tl span{flex:1;min-width:2px;border-radius:3px}
+.ep-tl span.on{outline:2px solid #0F2A33;outline-offset:2px}
+.ep-tl-lbl{display:flex;justify-content:space-between;font-size:.75rem;color:var(--ep-muted);margin-top:6px}
+@media (max-width:640px){.ep-dist-row{grid-template-columns:1fr 36px 44px}.ep-track{grid-column:1/-1;grid-row:2}}
 @media (max-width:640px){.ep-hero{padding:20px}.ep-hero h1{font-size:1.5rem}.ep-score{flex-direction:column;align-items:flex-start}}
 </style>
 """)
@@ -199,6 +214,39 @@ def tampilkan_dashboard(r, t):
             "(leher, badan & kaki). Skor tiap bagian (1 = aman) digabung menjadi Skor Grup A dan B, "
             f"lalu keduanya digabung menjadi Skor Akhir RULA. Sisi tubuh yang dianalisis: **{r['sisi']}**."
         )
+
+
+def kartu_distribusi(df, detik_dipilih):
+    """Stacked bar 100% + rincian per kategori + linimasa per detik (frame terpilih diberi garis tepi)."""
+    n = len(df)
+    jumlah = df["kategori_risiko"].value_counts()
+    kat = [(label, warna, int(jumlah.get(label, 0))) for _, label, warna in KATEGORI]
+    dom_label, _, dom_n = max(kat, key=lambda k: k[2])
+    stack = "".join(
+        f'<span style="flex:{c};background:{WARNA_HEX[w]}" title="{l}: {c} frame"></span>' for l, w, c in kat if c
+    )
+    baris = "".join(
+        f'<div class="ep-dist-row">{chip(w, l.split(" / ")[0])}'
+        f'<div class="ep-track"><span style="width:{c / n * 100:.1f}%;background:{WARNA_HEX[w]}"></span></div>'
+        f'<span class="ep-num">{c}</span><span class="ep-pct">{c / n:.0%}</span></div>'
+        for l, w, c in kat
+    )
+    warna_kat = {l: w for _, l, w in KATEGORI}
+    linimasa = "".join(
+        f'<span class="{"on" if d == detik_dipilih else ""}" style="background:{WARNA_HEX[warna_kat[k]]}" '
+        f'title="Detik {d:g}: skor {s}"></span>'
+        for d, k, s in zip(df["detik"], df["kategori_risiko"], df["skor_akhir_rula"])
+    )
+    st.html(f"""
+    <div class="ep-dist">
+      <p class="lead"><b>{dom_n} dari {n} frame ({dom_n / n:.0%})</b> berada pada kategori <b>{dom_label}</b>.</p>
+      <div class="ep-stack" role="img" aria-label="Proporsi frame per kategori risiko">{stack}</div>
+      {baris}
+      <div class="ep-sub">Linimasa per detik</div>
+      <div class="ep-tl" role="img" aria-label="Kategori risiko tiap detik video">{linimasa}</div>
+      <div class="ep-tl-lbl"><span>{df["detik"].iloc[0]:g} dtk</span>
+        <span>garis tepi = detik yang sedang dilihat</span><span>{df["detik"].iloc[-1]:g} dtk</span></div>
+    </div>""")
 
 
 def png_bytes(image_bgr):
@@ -390,7 +438,7 @@ else:
     m3.metric("Frame risiko tinggi", f"{(df['skor_akhir_rula'] >= 5).mean():.0%}", border=True)
     with st.container(border=True):
         st.markdown("##### :material/bar_chart: Distribusi kategori risiko per frame")
-        st.pyplot(grafik_distribusi(df), width="stretch")
+        kartu_distribusi(df, detik)
     with st.expander("Tabel hasil per frame", icon=":material/table_rows:"):
         st.dataframe(df.drop(columns=["nama_berkas", "rekomendasi"]), hide_index=True, width="stretch")
     anotasi_terpilih = cv2.imdecode(np.frombuffer(dipilih["anotasi"], np.uint8), cv2.IMREAD_COLOR)
