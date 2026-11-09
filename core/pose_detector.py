@@ -1,4 +1,5 @@
-"""Ekstraksi 33 landmark MediaPipe Pose dan seleksi sisi tubuh dominan."""
+"""Ekstraksi 33 landmark MediaPipe Pose, seleksi sisi tubuh dominan, dan validasi pose."""
+import math
 import urllib.request
 from pathlib import Path
 
@@ -16,6 +17,12 @@ SIDES = {
     "kiri": {"telinga": 7, "bahu": 11, "siku": 13, "pergelangan": 15, "pinggul": 23},
     "kanan": {"telinga": 8, "bahu": 12, "siku": 14, "pergelangan": 16, "pinggul": 24},
 }
+LUTUT = {"kiri": 25, "kanan": 26}
+
+# Diukur dari foto duduk tampak samping: rasio bahu 0,04-0,07 dan sudut paha 4-14°.
+# Tampak depan rasio bahu ~0,7-0,9; berdiri sudut paha ~80-90°. Ambang dipilih jauh dari keduanya.
+BATAS_RASIO_BAHU = 0.45
+BATAS_SUDUT_PAHA = 60
 
 
 def _ensure_model():
@@ -81,3 +88,21 @@ def pilih_sisi(landmarks, width, height):
     titik = {n: (landmarks[i][0] * width, landmarks[i][1] * height) for n, i in idx.items()}
     vis_min = min(landmarks[i][3] for i in idx.values())
     return sisi, titik, vis_min
+
+
+def validasi_pose(landmarks, width, height, sisi):
+    """Kembalikan pesan penolakan bila foto bukan postur duduk tampak samping, atau None bila layak dinilai."""
+    p = [(x * width, y * height) for x, y, _, _ in landmarks]
+    tengah = lambda a, b: ((p[a][0] + p[b][0]) / 2, (p[a][1] + p[b][1]) / 2)
+    badan = math.dist(tengah(11, 12), tengah(23, 24))
+    if badan > 0 and abs(p[11][0] - p[12][0]) / badan > BATAS_RASIO_BAHU:
+        return ("Foto terlihat dari depan atau belakang. Gunakan foto tampak samping agar sudut leher "
+                "dan punggung dapat diukur.")
+
+    lutut, pinggul = LUTUT[sisi], SIDES[sisi]["pinggul"]
+    if landmarks[lutut][3] >= 0.5:  # lutut tertutup meja/tak terlihat: pengecekan duduk dilewati
+        dx, dy = abs(p[lutut][0] - p[pinggul][0]), abs(p[lutut][1] - p[pinggul][1])
+        if math.degrees(math.atan2(dy, dx)) > BATAS_SUDUT_PAHA:
+            return ("Postur tidak terdeteksi sebagai posisi duduk (paha terlihat tegak). Metode ini "
+                    "hanya untuk menilai postur duduk; gunakan foto saat sedang duduk.")
+    return None

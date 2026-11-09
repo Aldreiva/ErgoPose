@@ -5,7 +5,30 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.angle_calculator import hitung_sudut, hitung_semua_sudut
+from core.pose_detector import validasi_pose
 from core.rula_evaluator import evaluasi, skor_bagian
+
+
+def _landmarks(titik, vis_lutut=0.9):
+    """33 landmark ternormalisasi; titik: {indeks: (x, y)}."""
+    lm = [(0.5, 0.5, 0.0, 0.9)] * 33
+    for i, (x, y) in titik.items():
+        lm[i] = (x, y, 0.0, vis_lutut if i in (25, 26) else 0.9)
+    return lm
+
+
+def test_validasi_pose():
+    # duduk tampak samping: bahu & pinggul kiri-kanan bertumpuk, paha mendatar
+    duduk = {11: (.50, .30), 12: (.52, .30), 23: (.50, .60), 24: (.52, .60), 25: (.75, .62), 26: (.77, .62)}
+    assert validasi_pose(_landmarks(duduk), 100, 100, "kiri") is None
+    # tampak depan: bahu kiri-kanan berjauhan
+    depan = {**duduk, 11: (.35, .30), 12: (.65, .30), 23: (.40, .60), 24: (.60, .60)}
+    assert "depan" in validasi_pose(_landmarks(depan), 100, 100, "kiri")
+    # berdiri tampak samping: lutut tepat di bawah pinggul
+    berdiri = {**duduk, 25: (.51, .85), 26: (.53, .85)}
+    assert "duduk" in validasi_pose(_landmarks(berdiri), 100, 100, "kiri")
+    # lutut tak terlihat (tertutup meja): pengecekan duduk dilewati
+    assert validasi_pose(_landmarks(berdiri, vis_lutut=0.2), 100, 100, "kiri") is None
 
 
 def test_hitung_sudut():

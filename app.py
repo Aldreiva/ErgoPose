@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from core.angle_calculator import hitung_semua_sudut
-from core.pose_detector import PoseDetector, pilih_sisi
+from core.pose_detector import PoseDetector, pilih_sisi, validasi_pose
 from core.rula_evaluator import DEFAULT_THRESHOLDS, KATEGORI, WARNA_HEX, evaluasi
 from utils.image_processor import gambar_anotasi, tingkatkan_kontras
 from utils.report_generator import baris_hasil, ke_csv
@@ -112,6 +112,9 @@ def analisis(image_bgr, detector, kontras, thresholds):
         return "Tubuh tidak terdeteksi. Pastikan seluruh tubuh bagian atas terlihat dari samping dan tidak tertutup objek."
     h, w = image_bgr.shape[:2]
     sisi, titik, vis_min = pilih_sisi(landmarks, w, h)
+    pesan = validasi_pose(landmarks, w, h, sisi)
+    if pesan:
+        return pesan
     try:
         sudut = hitung_semua_sudut(titik)
     except ValueError as e:
@@ -395,9 +398,10 @@ else:
     hasil_frame, gagal = st.session_state.video_hasil
 
     if gagal:
-        st.warning(f"{gagal} frame dilewati karena tubuh tidak terdeteksi.", icon=":material/person_off:")
+        st.warning(f"{gagal} frame dilewati karena tubuh tidak terdeteksi atau bukan postur duduk tampak samping.",
+                   icon=":material/person_off:")
     if not hasil_frame:
-        st.error("Tidak ada frame dengan tubuh terdeteksi.", icon=":material/error:")
+        st.error("Tidak ada frame berisi postur duduk tampak samping yang dapat dinilai.", icon=":material/error:")
         st.stop()
 
     def tingkat_bahaya(r):
