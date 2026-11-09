@@ -1,0 +1,22 @@
+[theme]
+base = "light"
+primaryColor = "#0E7490"
+backgroundColor = "#F7FBFC"
+secondaryBackgroundColor = "#E8F4F7"
+textColor = "#0F2A33"
+greenColor = "#047857"
+orangeColor = "#B45309"
+redColor = "#B91C1C"
+font = "Atkinson Hyperlegible:https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap"
+baseRadius = "0.75rem"
+borderColor = "#CFE3E9"
+
+[theme.sidebar]
+backgroundColor = "#EAF4F7"
+
+[browser]
+gatherUsageStats = false
+
+[server]
+# MB; cukup untuk foto & video pendek, mencegah RAM server (±1 GB di Streamlit Cloud) habis
+maxUploadSize = 50

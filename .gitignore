@@ -1,0 +1,11 @@
+# Lingkungan & cache Python
+.venv/
+__pycache__/
+*.pyc
+
+# Model MediaPipe diunduh otomatis saat aplikasi pertama kali jalan
+models/
+
+# Alat bantu lokal, bukan bagian aplikasi
+.claude/
+graphify-out/

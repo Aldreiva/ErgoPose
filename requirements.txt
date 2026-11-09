@@ -1,0 +1,8 @@
+# Versi dikunci sesuai yang sudah diuji (Python 3.11)
+streamlit==1.67.0
+mediapipe==1.2.2
+# dipakai langsung sebagai cv2; versi contrib karena itu yang dibawa mediapipe (opencv-python akan bentrok)
+opencv-contrib-python==5.0.0.93
+numpy==2.4.6
+pandas==3.1.1
+matplotlib==3.11.2
