@@ -304,36 +304,47 @@ if not is_video:
     baris = [baris_hasil(berkas.name, r["sisi"], r["sudut"], r["hasil"])]
     anotasi_terpilih = r["anotasi"]
 else:
-    suffix = os.path.splitext(berkas.name)[1]
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
-        f.write(berkas.getvalue())
-    cap = cv2.VideoCapture(f.name)
-    try:
-        if not cap.isOpened():
-            st.error("Berkas video tidak dapat dibaca.", icon=":material/error:")
-            st.stop()
-        fps = cap.get(cv2.CAP_PROP_FPS) or 30
-        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
-        langkah = max(1, round(fps))  # 1 frame per detik
-        progress = st.progress(0.0, "Mengekstraksi frame…")
-        hasil_frame, gagal, i = [], 0, 0
-        while True:
-            ok, frame = cap.read()
-            if not ok:
-                break
-            if i % langkah == 0:
-                r = analisis(frame, detector, kontras, thresholds)
-                if isinstance(r, str):
-                    gagal += 1
-                else:
-                    r["detik"] = round(i / fps, 1)
-                    hasil_frame.append(r)
-                progress.progress(min(i / total, 1.0), f"Menganalisis detik ke-{i / fps:.0f}…")
-            i += 1
-        progress.empty()
-    finally:
-        cap.release()
-        os.remove(f.name)
+    # Hasil analisis disimpan per sesi agar menggeser slider detik tidak menganalisis ulang seluruh video.
+    kunci = (berkas.file_id, conf, kontras, str(thresholds))
+    if st.session_state.get("video_kunci") != kunci:
+        suffix = os.path.splitext(berkas.name)[1]
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
+            f.write(berkas.getvalue())
+        cap = cv2.VideoCapture(f.name)
+        try:
+            if not cap.isOpened():
+                st.error("Berkas video tidak dapat dibaca.", icon=":material/error:")
+                st.stop()
+            fps = cap.get(cv2.CAP_PROP_FPS) or 30
+            total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
+            langkah = max(1, round(fps))  # 1 frame per detik
+            progress = st.progress(0.0, "Mengekstraksi frame…")
+            hasil_frame, gagal, i = [], 0, 0
+            while True:
+                ok, frame = cap.read()
+                if not ok:
+                    break
+                if i % langkah == 0:
+                    # perkecil frame besar agar memori server tetap aman; sudut tidak terpengaruh skala
+                    skala = 1280 / max(frame.shape[:2])
+                    if skala < 1:
+                        frame = cv2.resize(frame, None, fx=skala, fy=skala, interpolation=cv2.INTER_AREA)
+                    r = analisis(frame, detector, kontras, thresholds)
+                    if isinstance(r, str):
+                        gagal += 1
+                    else:
+                        r["detik"] = round(i / fps, 1)
+                        r["anotasi"] = cv2.imencode(".jpg", r["anotasi"], [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()
+                        hasil_frame.append(r)
+                    progress.progress(min(i / total, 1.0), f"Menganalisis detik ke-{i / fps:.0f}…")
+                i += 1
+            progress.empty()
+        finally:
+            cap.release()
+            os.remove(f.name)
+        st.session_state.video_kunci = kunci
+        st.session_state.video_hasil = (hasil_frame, gagal)
+    hasil_frame, gagal = st.session_state.video_hasil
 
     if gagal:
         st.warning(f"{gagal} frame dilewati karena tubuh tidak terdeteksi.", icon=":material/person_off:")
@@ -341,16 +352,34 @@ else:
         st.error("Tidak ada frame dengan tubuh terdeteksi.", icon=":material/error:")
         st.stop()
 
-    terburuk = max(hasil_frame, key=lambda r: r["hasil"]["skor_akhir"])
+    def tingkat_bahaya(r):
+        # Skor akhir dulu; bila seri, skor Grup A+B, lalu total sudut leher+punggung+lengan atas.
+        h, s = r["hasil"], r["sudut"]
+        return h["skor_akhir"], h["grup_a"] + h["grup_b"], s["leher"] + s["punggung"] + s["lengan_atas"]
+
+    terburuk = max(hasil_frame, key=tingkat_bahaya)
+    per_detik = {r["detik"]: r for r in hasil_frame}
     kiri, kanan = st.columns(2, gap="medium")
     with kiri.container(border=True):
         st.markdown("##### :material/movie: Video asli")
         st.video(berkas.getvalue())
     with kanan.container(border=True):
-        st.markdown(f"##### :material/accessibility_new: Frame paling berisiko · detik ke-{terburuk['detik']}")
-        st.image(terburuk["anotasi"], channels="BGR", width="stretch")
+        if len(per_detik) > 1:
+            detik = st.select_slider(
+                "Pilih detik yang ingin dilihat",
+                options=list(per_detik),
+                value=terburuk["detik"],
+                format_func=lambda d: f"{d:g} dtk" + (" (terburuk)" if d == terburuk["detik"] else ""),
+                help="Awalnya menampilkan frame paling berisiko, ditandai (terburuk).",
+            )
+        else:
+            detik = terburuk["detik"]
+        dipilih = per_detik[detik]
+        label = "Frame paling berisiko" if dipilih is terburuk else "Frame terpilih"
+        st.markdown(f"##### :material/accessibility_new: {label} · detik ke-{detik:g}")
+        st.image(dipilih["anotasi"], width="stretch")
         st.caption("Angka = sudut sendi (derajat). Warna garis = tingkat risiko.")
-    tampilkan_dashboard(terburuk, thresholds)
+    tampilkan_dashboard(dipilih, thresholds)
 
     baris = [baris_hasil(berkas.name, r["sisi"], r["sudut"], r["hasil"], r["detik"]) for r in hasil_frame]
     df = pd.DataFrame(baris)
@@ -364,7 +393,7 @@ else:
         st.pyplot(grafik_distribusi(df), width="stretch")
     with st.expander("Tabel hasil per frame", icon=":material/table_rows:"):
         st.dataframe(df.drop(columns=["nama_berkas", "rekomendasi"]), hide_index=True, width="stretch")
-    anotasi_terpilih = terburuk["anotasi"]
+    anotasi_terpilih = cv2.imdecode(np.frombuffer(dipilih["anotasi"], np.uint8), cv2.IMREAD_COLOR)
 
 st.subheader("Ekspor Data", anchor=False)
 nama = os.path.splitext(berkas.name)[0]
