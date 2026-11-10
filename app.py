@@ -44,6 +44,17 @@ st.html("""
 .ep-green{color:var(--ep-green);background:var(--ep-green-bg);border-color:var(--ep-green)}
 .ep-orange{color:var(--ep-orange);background:var(--ep-orange-bg);border-color:var(--ep-orange)}
 .ep-red{color:var(--ep-red);background:var(--ep-red-bg);border-color:var(--ep-red)}
+.ep-maroon{color:#fff;background:#991B1B;border-color:#991B1B}
+.ep-batas-wrap{overflow-x:auto}
+.ep-batas{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.ep-batas th,.ep-batas td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--ep-line);white-space:nowrap}
+.ep-batas tbody tr:last-child td{border-bottom:none}
+.ep-batas td:first-child{white-space:normal}
+.ep-batas td small{display:block;color:var(--ep-muted);font-size:.78rem}
+.ep-batas .na{color:var(--ep-muted)}
+.ep-batas .m{display:none}
+@media (max-width:640px){.ep-batas thead{display:none}.ep-batas tr{display:block;padding:10px 0;border-bottom:1px solid var(--ep-line)}.ep-batas tbody tr:last-child{border-bottom:none}.ep-batas td{display:flex;justify-content:space-between;align-items:center;gap:12px;border:none;padding:5px 0}.ep-batas td.kosong{display:none}.ep-batas .m{display:inline-flex}}
+.ep-card .note{margin:12px 0 0;font-size:.82rem;color:var(--ep-muted);line-height:1.5}
 .ep-score{display:flex;align-items:center;gap:22px;padding:20px 24px;border-radius:16px;border:1px solid}
 .ep-score .num{flex:none;display:grid;place-items:center;width:88px;height:88px;border-radius:50%;
   background:#fff;font-size:2.8rem;font-weight:700;line-height:1;border:3px solid}
@@ -82,7 +93,9 @@ IKON = {  # ikon SVG (Lucide) agar status tidak hanya dibedakan lewat warna
     "orange": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>',
     "red": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg>',
 }
-STATUS = {1: ("green", "Aman"), 2: ("orange", "Waspada")}
+IKON["maroon"] = IKON["red"]
+# Status skor per sendi RULA: 1 aman, 2 waspada, 3 berisiko, 4 bahaya
+STATUS = {1: ("green", "Aman"), 2: ("orange", "Waspada"), 3: ("red", "Berisiko")}
 DESKRIPSI = {
     "green": "Postur dapat diterima. Pertahankan, dan tetap lakukan peregangan berkala.",
     "orange": "Perlu evaluasi lebih lanjut dan perubahan posisi duduk dalam waktu dekat.",
@@ -95,7 +108,7 @@ def chip(warna, teks):
 
 
 def status_bagian(skor):
-    return STATUS.get(skor, ("red", "Berisiko"))
+    return STATUS.get(skor, ("maroon", "Bahaya"))
 
 
 @st.cache_resource
@@ -203,7 +216,7 @@ def tampilkan_dashboard(r, t):
         ]
         df = pd.DataFrame(baris, columns=["Kelompok", "Bagian tubuh", "Sudut", "Skor", "Status"])
         # warna teks tua (kontras ≥ 4,5:1); dataframe digambar di canvas sehingga variabel CSS tidak berlaku
-        warna_status = {"Aman": "#047857", "Waspada": "#B45309", "Berisiko": "#B91C1C"}
+        warna_status = {"Aman": "#047857", "Waspada": "#B45309", "Berisiko": "#B91C1C", "Bahaya": "#7F1D1D"}
         gaya = (
             df.style
             .map(lambda v: f"color:{warna_status[v]};font-weight:700" if v in warna_status else "",
@@ -217,6 +230,38 @@ def tampilkan_dashboard(r, t):
             "(leher, badan & kaki). Skor tiap bagian (1 = aman) digabung menjadi Skor Grup A dan B, "
             f"lalu keduanya digabung menjadi Skor Akhir RULA. Sisi tubuh yang dianalisis: **{r['sisi']}**."
         )
+
+
+def kartu_batas_sudut(t):
+    """Tabel rentang sudut per sendi untuk tiap tingkat, diturunkan dari ambang yang dipakai penilaian."""
+    lh, pg, la, (lo, hi) = t["leher"], t["punggung"], t["lengan_atas"], t["lengan_bawah"]
+    kosong = '<span class="na">—</span>'
+    baris = [
+        ("Leher", "menunduk ke depan", f"0–{lh[0]}°", f"&gt;{lh[0]}–{lh[1]}°", f"&gt;{lh[1]}°", kosong),
+        ("Punggung", "membungkuk ke depan", f"0–{pg[0]}°", f"&gt;{pg[0]}–{pg[1]}°", f"&gt;{pg[1]}–{pg[2]}°", f"&gt;{pg[2]}°"),
+        ("Lengan atas", "terangkat ke depan", f"0–{la[0]}°", f"&gt;{la[0]}–{la[1]}°", f"&gt;{la[1]}–{la[2]}°", f"&gt;{la[2]}°"),
+        ("Siku", "tekukan lengan bawah", f"{lo}–{hi}°", f"&lt;{lo}° atau &gt;{hi}°", kosong, kosong),
+    ]
+    tingkat = [("green", "Aman"), ("orange", "Waspada"), ("red", "Berisiko"), ("maroon", "Bahaya")]
+    # di layar kecil tabel jadi blok bertumpuk; chip kelas "m" menggantikan judul kolom yang disembunyikan
+    sel = lambda v, w, l: (f'<td class="kosong">{v}</td>' if v == kosong
+                           else f'<td>{chip(w, l).replace("ep-chip", "ep-chip m", 1)}<span>{v}</span></td>')
+    isi = "".join(
+        f"<tr><td><b>{n}</b><small>{d}</small></td>"
+        + "".join(sel(v, w, l) for v, (w, l) in zip(nilai, tingkat)) + "</tr>"
+        for n, d, *nilai in baris
+    )
+    kepala = "".join(f"<th>{chip(w, l)}</th>" for w, l in tingkat)
+    st.html(f"""
+    <div class="ep-card">
+      <h4>Batas sudut tiap bagian tubuh</h4>
+      <div class="ep-batas-wrap"><table class="ep-batas">
+        <thead><tr><th>Bagian tubuh</th>{kepala}</tr></thead><tbody>{isi}</tbody>
+      </table></div>
+      <p class="note">Skor bagian: Aman = 1, Waspada = 2, Berisiko = 3, Bahaya = 4. Batas ini mengikuti pengaturan
+        <i>Kalibrasi batas sudut</i> di sidebar. Tanda — berarti tingkat tersebut tidak dinilai untuk bagian itu.
+        Pergelangan tangan dan kaki tidak diukur dan dianggap aman (skor 1).</p>
+    </div>""")
 
 
 def kartu_distribusi(df, detik_dipilih):
@@ -323,8 +368,10 @@ if berkas is None:
       <h4>Arti skor akhir RULA</h4>
       <div class="ep-legend"><span class="rng">1–2</span>{chip("green", "Aman")}<span>Postur dapat diterima</span></div>
       <div class="ep-legend"><span class="rng">3–4</span>{chip("orange", "Waspada")}<span>Perlu perbaikan</span></div>
-      <div class="ep-legend"><span class="rng">5–7</span>{chip("red", "Bahaya")}<span>Segera dikoreksi</span></div>
+      <div class="ep-legend"><span class="rng">5–7</span>{chip("maroon", "Bahaya")}<span>Segera dikoreksi</span></div>
     </div>""")
+    st.write("")
+    kartu_batas_sudut(thresholds)
     st.stop()
 
 try:
